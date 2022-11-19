@@ -8,7 +8,7 @@ to match its graph. By default, employs
 [`Residue`](@ref) `container`, set `start` argument to define a new starting
 point). Also updates the [`Atom`](@ref) order in the corresponding and provided
 [`State`](@ref) `state`. Expects both the [`State`](@ref) and respective
-[Graph](@ref) to be correctly re-indexed (see
+[Graph](@ref graph-types) to be correctly re-indexed (see
 [`reindex`](@ref ProtoSyn.reindex)). By default, uses `search_algorithm` BFS
 (breath first search). Note that, after sorting, [`Atom`](@ref) indexes may be
 wrong. It's reccommended to [`reindex`](@ref ProtoSyn.reindex) the encompassing
@@ -16,18 +16,18 @@ wrong. It's reccommended to [`reindex`](@ref ProtoSyn.reindex) the encompassing
 
     sort_atoms_by_graph!(state::State, container::Union{Topology, Segment}; [start::Opt{Atom} = nothing], [search_algorithm::F = ProtoSyn.BFS]) where {F <: SearchAlgorithm}
 
-Applies [`sort_atom_by_graph!`](@ref) to all [`Residue`](@ref) instances in the
+Applies [`sort_atoms_by_graph!`](@ref) to all [`Residue`](@ref) instances in the
 given `container`. Automatically calls [`reindex`](@ref ProtoSyn.reindex) after
 sorting the [`Atom`](@ref) instances.
 
     sort_atoms_by_graph!(pose::Pose; start::Opt{Atom} = nothing, search_algorithm::F = ProtoSyn.DFS) where {F <: SearchAlgorithm}
 
-Applies [`sort_atom_by_graph!`](@ref) to all [`Residue`](@ref) instances in the
+Applies [`sort_atoms_by_graph!`](@ref) to all [`Residue`](@ref) instances in the
 given [`Pose`](@ref) `pose`. Automatically calls
 [`reindex`](@ref ProtoSyn.reindex) after sorting the [`Atom`](@ref) instances.
 
 !!! ukw "Note:"
-    When applying [`sort_atom_by_graph!`](@ref) to a [`Pose`](@ref),
+    When applying [`sort_atoms_by_graph!`](@ref) to a [`Pose`](@ref),
     [`Topology`](@ref) or [`Segment`](@ref), the sorting is still performed at
     the [`Residue`](@ref) level (one [`Residue`](@ref) at a time), therefore the
     chain sorting based on graph size only takes into account intra-residue
@@ -69,7 +69,7 @@ function sort_atoms_by_graph!(state::State, container::Residue; start::Opt{Atom}
         return _sortperm
     end
 
-    @assert !isa(container, Atom) "Can't sort_atom_by_graph! on a single Atom instance." 
+    @assert !isa(container, Atom) "Can't sort_atoms_by_graph! on a single Atom instance." 
     old_atoms_indexes = [a.index for a in collect(eachatom(container))]
     
     if start === nothing
@@ -82,11 +82,16 @@ function sort_atoms_by_graph!(state::State, container::Residue; start::Opt{Atom}
     atoms         = ProtoSyn.travel_graph(start, search_algorithm = search_algorithm)
     atoms_indexes = [a.index for a in atoms if a in container.items]
 
+    if length(atoms_indexes) !== length(old_atoms_indexes)
+        println([x.name for x in atoms if x in container.items])
+        println([x.name for x in collect(eachatom(container))])
+    end
+
     @assert length(atoms_indexes) === length(old_atoms_indexes) "Starting on $start, the inter-container graph traveled only accounts for $(length(atoms_indexes)) of the original $(length(old_atoms_indexes)) atoms. Make sure parenthoods are set and that the defined `start` atom is correct."
 
     _sortperm = find_atom_sortperm(state, old_atoms_indexes, atoms_indexes)
-    ProtoSyn.verbose.mode && println("Old atom indexes: $old_atoms_indexes")
-    ProtoSyn.verbose.mode && println("New atom indexes: $atoms_indexes")
+    @info "Old atom indexes: $old_atoms_indexes"
+    @info "New atom indexes: $atoms_indexes"
 
     # Apply sort perm (ignoring the first 3 entries)
     state.items[4:end] = state.items[4:end][_sortperm[4:end]] # Atom states
@@ -97,8 +102,16 @@ function sort_atoms_by_graph!(state::State, container::Residue; start::Opt{Atom}
     return state, container
 end
 
-function sort_atoms_by_graph!(state::State, container::Union{Topology, Segment}; start::Opt{Atom} = nothing, search_algorithm::F = ProtoSyn.DFS) where {F <: SearchAlgorithm}
-    for residue in eachresidue(container)
+function sort_atoms_by_graph!(state::State, container::Union{Topology, Segment}; start::Opt{Atom} = nothing, search_algorithm::F = ProtoSyn.DFS, ignore_selection::Opt{AbstractSelection} = nothing) where {F <: SearchAlgorithm}
+    
+    if ignore_selection === nothing
+        ignore_sele = !TrueSelection{Residue}()
+    else
+        ignore_sele = ProtoSyn.promote(ignore_selection, Residue)
+    end
+    
+    residues = (!ignore_sele)(container, gather = true)
+    for residue in residues
         ProtoSyn.sort_atoms_by_graph!(state, residue, start = start, search_algorithm = search_algorithm)
     end
 
@@ -106,8 +119,15 @@ function sort_atoms_by_graph!(state::State, container::Union{Topology, Segment};
     return state, container
 end
 
-function sort_atoms_by_graph!(pose::Pose; start::Opt{Atom} = nothing, search_algorithm::F = ProtoSyn.DFS) where {F <: SearchAlgorithm}
-    return sort_atoms_by_graph!(pose.state, pose.graph, start = start, search_algorithm = search_algorithm)
+function sort_atoms_by_graph!(pose::Pose; start::Opt{Atom} = nothing, search_algorithm::F = ProtoSyn.DFS, ignore_selection::Opt{AbstractSelection} = nothing) where {F <: SearchAlgorithm}
+
+    if ignore_selection === nothing
+        ignore_sele = !TrueSelection{Residue}()
+    else
+        ignore_sele = ProtoSyn.promote(ignore_selection, Residue)
+    end
+
+    return sort_atoms_by_graph!(pose.state, pose.graph, start = start, search_algorithm = search_algorithm, ignore_selection = ignore_sele)
 end
 
 

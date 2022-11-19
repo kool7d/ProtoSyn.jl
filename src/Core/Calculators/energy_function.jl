@@ -13,7 +13,7 @@ the [`Atom`](@ref) selection this [`EnergyFunction`](@ref) is applied to. If
 inner [`EnergyFunctionComponent`](@ref) instances also have `AbstractSelection`
 selections defined, the resulting selection will be the intersection between 
 both. The `update_forces` sets whether to calculate and update the
-[`Pose`](@ref) [State](@ref) forces. The Julia cache is automatically cleaned by
+[`Pose`](@ref) [State](@ref state-types) forces. The Julia cache is automatically cleaned by
 garbage collection. However, in certain cases (such as using the
 [TorchANI](@ref) [`EnergyFunctionComponent`](@ref)), a manual call to garbage
 collection is necessary (see
@@ -53,7 +53,7 @@ the `AbstractSelection` `selection` field is defined as an atomic
 # Examples
 ```
 julia> energy_function = ProtoSyn.Calculators.EnergyFunction()
-⚡  Energy Function (0 components):
+🗲  Energy Function (0 components):
 +----------------------------------------------------------------------+
 | Index | Component name                                | Weight (α)   |
 +----------------------------------------------------------------------+
@@ -63,7 +63,7 @@ julia> energy_function = ProtoSyn.Calculators.EnergyFunction()
  └── TrueSelection (Atom)
 
 julia> push!(energy_function, Calculators.Restraints.get_default_bond_distance_restraint())
-⚡  Energy Function (1 components):
+🗲  Energy Function (1 components):
 +----------------------------------------------------------------------+
 | Index | Component name                                | Weight (α)   |
 +----------------------------------------------------------------------+
@@ -77,7 +77,7 @@ julia> push!(energy_function, Calculators.Restraints.get_default_bond_distance_r
  0.5
 
 julia> energy_function
-⚡  Energy Function (1 components):
+🗲  Energy Function (1 components):
 +----------------------------------------------------------------------+
 | Index | Component name                                | Weight (α)   |
 +----------------------------------------------------------------------+
@@ -154,6 +154,7 @@ function Base.copy(ef::EnergyFunction)
     return nef
 end
 
+
 """
     fixate_masks!(ef::EnergyFunction, pose::Pose) where {T <: AbstractFloat}
 
@@ -162,7 +163,7 @@ instances in the given [`EnergyFunction`](@ref) `ef` from dynamic to static, by
 applying them to the given [`Pose`](@ref) `pose`.
 
 # See also
-[`fixate_mask!`](@ref)
+[`fixate_mask!`](@ref ProtoSyn.Calculators.fixate_mask!)
 
 # Examples
 ```jldoctest
@@ -171,12 +172,12 @@ julia> ProtoSyn.Calculators.fixate_masks!(energy_function, pose)
 julia> energy_function[4].settings[:mask]
 ProtoSyn.Mask
  ├── Type: Atom
- ├── Size: (21, 21)
- ├── Count: 420
- └── Content: [0 1 … 1 1; 1 0 … 1 1; … ; 1 1 … 0 1; 1 1 … 1 0]
+ ├── Size: (343, 343)
+ ├── Count: 111594 / 117649
+ └── Content: [0 0 … 1 1; 0 0 … 1 1; … ; 1 1 … 0 0; 1 1 … 0 0]
 ```
 """
-function fixate_masks!(ef::EnergyFunction, pose::Pose) where {T <: AbstractFloat}
+function fixate_masks!(ef::EnergyFunction, pose::Pose)
     for efc in ef.components
         if (:mask in keys(efc.settings)) && isa(efc.settings[:mask], Function)
             efc.settings[:mask] = efc.settings[:mask](pose)
@@ -273,7 +274,11 @@ function Base.show(io::IO, efc::EnergyFunction, level_code::Opt{LevelCode} = not
     @printf(io, "%s| %-5s | %-45s | %-12s |\n", inner_lead, "Index", "Component name", "Weight (α)")
     println(io, inner_lead*"+"*repeat("-", 70)*"+")
     for (index, component) in enumerate(efc.components)
-        @printf(io, "%s| %-5d | %-45s | %10.3f   |\n", inner_lead, index, component.name, component.α)
+        if component.α < 0.01
+            @printf(io, "%s| %-5d | %-45s | %10.2e   |\n", inner_lead, index, component.name, component.α)
+        else
+            @printf(io, "%s| %-5d | %-45s | %10.2f   |\n", inner_lead, index, component.name, component.α)
+        end
     end
     println(io, inner_lead*"+"*repeat("-", 70)*"+")
 

@@ -67,49 +67,4 @@ ProtoSyn.eval(:(begin
         println(io, lead*"SidechainSelection › ($(selection_type(scs)))")
     end
 
-    # ---
-
-    export ChiSelection
-
-    """
-    # TODO DOCUMENTATION
-    """
-    mutable struct ChiSelection{M, T} <: AbstractSelection
-        ChiSelection() = begin
-            new{ProtoSyn.Stateless, Atom}()
-        end
-    end
-
-    # --- Select -------------------------------------------------------------------
-    function select(::ChiSelection, container::ProtoSyn.AbstractContainer)
-
-        n_atoms = count_atoms(container)
-        mask = Mask{Atom}(n_atoms)
-
-        for atom in eachatom(container)
-            if !(atom.container.name in keys(Peptides.Dihedral.chi_dict))
-                mask[atom.index] = false
-                continue
-            end
-            chi_list = Peptides.Dihedral.chi_dict[atom.container.name]
-            if atom.name in chi_list[2:end]
-                mask[atom.index] = true
-            end
-        end
-
-        return mask
-    end
-
-    state_mode_type(::ChiSelection{M, T}) where {M, T} = M
-    selection_type(::ChiSelection{M, T}) where {M, T} = T
-
-    # --- Show -----------------------------------------------------------------
-    function Base.show(io::IO, cs::ChiSelection{M, T}, level_code::Opt{LevelCode} = nothing) where {M, T}
-        lead = ProtoSyn.get_lead(level_code)
-        if level_code === nothing
-            level_code = LevelCode()
-        end
-        println(io, lead*"ChiSelection › ($(selection_type(cs)))")
-    end
-
 end))

@@ -34,14 +34,18 @@ module Electrostatics
             sele = ProtoSyn.promote(selection, Atom)
         end
 
-        data    = split(open(f->read(f, String), filename), "\n")[2]
-        T       = eltype(pose.state)
-        charges = map((value) -> parse(T, value), split(data))
+        # ASSUMES UNIQUE NAMES
+        data       = ProtoSyn.load(filename)
+        data_atoms = collect(eachatom(data.graph))
 
         atoms = sele(pose, gather = true)
-        @assert length(atoms) === length(charges) "Attempted to apply $(length(charges)) to $(length(atoms)) selected atoms."
-        for (i, atom) in enumerate(atoms)
-            pose.state[atom].δ = charges[i]
+        @assert length(atoms) === length(data_atoms) "Attempted to apply $(length(data_atoms)) to $(length(atoms)) selected atoms."
+        charges = Vector{eltype(pose.state)}()
+        for atom in atoms
+            i = findfirst((x) -> x.name === atom.name, data_atoms)
+            δ = data.state[i].δ
+            pose.state[atom].δ = δ
+            push!(charges, δ)
         end
 
         return charges
@@ -57,8 +61,10 @@ module Electrostatics
     selected [`Atom`](@ref) instances. For non-canonical aminoacids and ligands
     (any [`Residue`](@ref) without an entry on `ProtoSyn.three_2_one`
     dictionary) and any [`Residue`](@ref) whose template have different
-    [`Atom`](@ref) names, a warning is shown. Set `supress_warn` to `true` to
-    ignore these warnings (`false`, by default).
+    [`Atom`](@ref) names, a warning is shown. Set `supress_warn` to an
+    AbstractSelection (or a boolean `true`) to ignore these warnings for the
+    selected [`Atom`](@ref) instances (or all atoms, if `true`, is set to
+    `false`, by default).
 
     !!! ukw "Note:"
         Consider setting default atom names (from the same [`LGrammar`](@ref)), for example, using the [`assign_default_atom_names!`](@ref ProtoSyn.Peptides.assign_default_atom_names!) method.
@@ -76,12 +82,16 @@ module Electrostatics
      (...)
     ```
     """
-    function assign_default_charges!(pose::Pose, res_lib::LGrammar, selection::Opt{AbstractSelection} = nothing; supress_warn::Bool = false)
+    function assign_default_charges!(pose::Pose, res_lib::LGrammar, selection::Opt{AbstractSelection} = nothing; supress_warn::Union{AbstractSelection, Bool} = false)
 
         if selection === nothing
             sele = TrueSelection{Residue}()
         else
             sele = ProtoSyn.promote(selection, Residue)
+        end
+
+        if typeof(supress_warn) <: AbstractSelection
+            supress_warn_sele = ProtoSyn.promote(supress_warn, Atom)(pose, gather = true)
         end
 
         residues = sele(pose, gather = true)
@@ -111,7 +121,12 @@ module Electrostatics
             # Apply the template atom's charge to each of the residue's atoms
             for atom in residue.items
                 if template.graph[1][atom.name] === nothing
-                    !supress_warn && @warn "Template doesn't have atom $atom"
+                    if typeof(supress_warn) === Bool && !supress_warn
+                        @warn "Template doesn't have atom $atom"
+                    elseif typeof(supress_warn) <: AbstractSelection && !(atom in supress_warn_sele)
+                        @warn "Template doesn't have atom $atom"
+                    end
+                    
                     continue
                 end # if
                 δ = template.state[template.graph[1][atom.name]].δ
@@ -150,7 +165,7 @@ module Electrostatics
     acceleration type used to calculate this energetic contribution (See
     [ProtoSyn acceleration types](@ref)). Uses `ProtoSyn.acceleration.active` by
     default. This function makes use of the
-    [`apply_potential`](@ref ProtoSyn.Calculators.apply_potential) framework. As
+    [`apply_potential!`](@ref ProtoSyn.Calculators.apply_potential!) framework. As
     such, an optional `mask` and `VerletList` `vlist` can be provided to limit
     the calculation. Make sure the [`Pose`](@ref) `pose` has charges assigned
     (see [`assign_acc2_eem_charges_from_file!`](@ref) and
@@ -190,21 +205,21 @@ module Electrostatics
 
 
     """
-        get_default_coulomb(;α::T = 1.0) where {T <: AbstractFloat}
+        get_default_coulomb(;[α::T = 1.0]) where {T <: AbstractFloat}
 
-    Return the default Coulomb [`EnergyFunctionComponent`](@ref). `α` sets the
+    Return the default Coulomb [`EnergyFunctionComponent`](@ref ProtoSyn.Calculators.EnergyFunctionComponent). `α` sets the
     component weight (on an
     [`EnergyFunction`](@ref ProtoSyn.Calculators.EnergyFunction) instance). This
     component employs the [`calc_coulomb`](@ref) method, therefore defining a
     [`Pose`](@ref) energy based on a given potential. By default, this 
-    [`EnergyFunctionComponent`](@ref) uses the
+    [`EnergyFunctionComponent`](@ref ProtoSyn.Calculators.EnergyFunctionComponent) uses the
     [`get_bump_potential_charges`](@ref ProtoSyn.Calculators.get_bump_potential_charges)
     potential, with an intra-residue mask (see
     [`get_intra_residue_mask`](@ref ProtoSyn.Calculators.get_intra_residue_mask)).
 
     # Settings
     * `mask::Function` - Defines which atom-pairs to mask out of the result;
-    * `vlist::VerletList` - If defined, the [`apply_potential`](@ref ProtoSyn.Calculators.apply_potential) method will only calculate the given atom-pairs in the `VerletList`;
+    * `vlist::VerletList` - If defined, the [`apply_potential!`](@ref ProtoSyn.Calculators.apply_potential!) method will only calculate the given atom-pairs in the `VerletList`;
     * `potential::Function` - Which potential to apply to each atom-pair;
 
     # Examples

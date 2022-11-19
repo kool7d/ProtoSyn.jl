@@ -24,6 +24,7 @@ module Calculators
 
     @info " | Loading SASA"
     include("sasa.jl")
+    include("radius_gyration.jl")
 
     @info " | Loading GB"
     include("gb.jl")
@@ -46,15 +47,15 @@ module Calculators
     """
         get_available_energy_function_components([m::Module = ProtoSyn.Calculators])
 
-    Returns all available [EnergyFunctionComponent](@ref) instances in the
-    provided `Module` `m` (defaults to [ProtoSyn.Calculators](@ref)).
+    Returns all available [`EnergyFunctionComponent`](@ref) instances in the
+    provided `Module` `m` (defaults to `ProtoSyn.Calculators`).
     Recursivelly searches any inner `Module`.
 
     # See also
-    [show_available_energy_function_components](@ref)
+    [`show_available_energy_function_components`](@ref)
 
     # Examples
-    ```jldoctest
+    ```
     julia> ProtoSyn.Calculators.get_available_energy_function_components(ProtoSyn.Calculators)
     14-element Vector{Function}:
      get_default_custom_ref_energy (generic function with 1 method)
@@ -98,16 +99,17 @@ module Calculators
         return energy_function_components
     end
 
+    
     """
         show_available_energy_function_components([io::IO = stdout], [m::Module = ProtoSyn.Calculators])
 
-    Prints all available [EnergyFunctionComponent](@ref) instances in the
-    provided `Module` `m` (defaults to [ProtoSyn.Calculators](@ref)) to the
+    Prints all available [`EnergyFunctionComponent`](@ref) instances in the
+    provided `Module` `m` (defaults to `ProtoSyn.Calculators`) to the
     given `IO` `io` (defaults to `stdout`). Recursivelly searches any inner
     `Module`.
 
     # See also
-    [get_available_energy_function_components](@ref)
+    [`get_available_energy_function_components`](@ref)
 
     # Examples
     ```jldoctest

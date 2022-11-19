@@ -94,7 +94,7 @@ end
 
 
 """
-    Calculators.calc_torchani_model_xmlrpc([::A], pose::Pose, update_forces::Bool = false; model::Int = 3) where {A}
+    Calculators.calc_torchani_model_xmlrpc([::A], pose::Pose, selection::Opt{AbstractSelection}, [update_forces::Bool = false]; [model::Int = 3]) where {A}
     
 Calculate the pose energy according to a single TorchANI model neural
 network, using the XML-RPC protocol. If no TorchANI XML-RPC server is found, a
@@ -166,7 +166,7 @@ end
 # * Default Energy Components --------------------------------------------------
 
 """
-    get_default_torchani_model_xmlrpc(;α::T = 1.0) where {T <: AbstractFloat}
+    get_default_torchani_model_xmlrpc(;[α::T = 1.0]) where {T <: AbstractFloat}
 
 Return the default TorchANI model [`EnergyFunctionComponent`](@ref). `α`
 sets the component weight (on an

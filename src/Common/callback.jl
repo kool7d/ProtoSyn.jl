@@ -1,6 +1,6 @@
 export default_energy_step_callback
 
-@doc """
+"""
     default_energy_step_callback(n::Int)::Callback
 
 Returns a simple [`Callback`](@ref ProtoSyn.Drivers.Callback) that prints the
@@ -29,7 +29,7 @@ end
 
 export default_energy_step_frame_callback
 
-@doc """
+"""
     default_energy_step_frame_callback(n::Int, filename::String)::Callback
 
 Returns a simple [`Callback`](@ref ProtoSyn.Drivers.Callback) that prints the
@@ -58,8 +58,9 @@ function default_energy_step_frame_callback(n::Int, filename::String)::Callback
     return Callback(energy_step_frame, n)
 end
 
+export default_energy_step_detailed
 
-@doc """
+"""
     default_energy_step_detailed(n::Int, msg::String = "Callback", color::Symbol = :none, file_out::Opt{String} = nothing, print_to_sdtout::Bool = true)::Callback
 
 Returns a detailed [`Callback`](@ref ProtoSyn.Drivers.Callback) that prints the
@@ -83,12 +84,13 @@ julia> ProtoSyn.Common.default_energy_step_detailed(1)
 +----------------------------------------------------------------------+
 ```
 """
-function default_energy_step_detailed(n::Int, msg::String = "Callback", color::Symbol = :none, file_out::Opt{String} = nothing, print_to_sdtout::Bool = true)::Callback
+function default_energy_step_detailed(n::Int, msg::String = "Callback", color::Symbol = :none, file_out::Opt{String} = nothing, print_to_sdtout::Bool = true; step_msg::Opt{String} = nothing)::Callback
     function energy_step_detailed(pose::Pose, driver_state::ProtoSyn.Drivers.DriverState)
         if file_out !== nothing
             io = open(file_out, "a")
         end
-        N = 20 + (20 * length(pose.state.e)) - length(msg)
+        _N = (20 * length(pose.state.e))
+        N = 20 + _N - length(msg)
         M = floor(Int, N/2) - 3
         E = N-6-(M*2)
         acc = driver_state.step === 0 ? 1.0 : driver_state.acceptance_count/driver_state.step
@@ -99,9 +101,20 @@ function default_energy_step_detailed(n::Int, msg::String = "Callback", color::S
                 s *= @sprintf("%20s", string(component))
             end
             s*= "\n"
-            print_to_sdtout && printstyled(s, color = :cyan)
+            print_to_sdtout && printstyled(s, color = color)
             if file_out !== nothing
                 print(io, s)
+            end
+        else
+            if step_msg !== nothing
+                N = 20 + _N - length(step_msg)
+                M = floor(Int, N/2) - 3
+                E = N-6-(M*2)
+                s  = @sprintf("%s\n", "| "*repeat("-", M)*" "*repeat(" ", E)*step_msg*" "*repeat("-", M)*" |")
+                print_to_sdtout && printstyled(s, color = color)
+                if file_out !== nothing
+                    print(io, s)
+                end
             end
         end
 
@@ -121,8 +134,40 @@ function default_energy_step_detailed(n::Int, msg::String = "Callback", color::S
 end
 
 
-@doc """
-default_energy_step_frame_detailed(n::Int, output_frame::String, msg::String = "Callback", color::Symbol = :none, output_log::Opt{String} = nothing, print_to_sdtout::Bool = true)::Callback
+"""
+    detailed_message(msg::String; color::Symbol = :none, file_out::Opt{String} = nothing, print_to_sdtout::Bool = true, N::Int = 100)
+
+Print a detailed message `msg` in the same style as
+[`default_energy_step_detailed`](@ref), with the given `color` (uses the 
+`printstyled` method). If `file_out` is set to a `String` (`nothing`, by
+default), also print to a file with the given file name. If `print_to_stdout` is
+set to `false` (`true`, by default), skip printing to the stdout. `N` sets the
+length of the final stylized message.
+
+# Examples
+```
+julia> ProtoSyn.Common.detailed_message("Simulation (Stage 3) ...", color = :blue, N = 120)
+| --------------------------------------------- Simulation (Stage 3) ... --------------------------------------------- |
+```
+"""
+function detailed_message(msg::String; color::Symbol = :none, file_out::Opt{String} = nothing, print_to_sdtout::Bool = true, N::Int = 100)
+    if file_out !== nothing
+        io = open(file_out, "a")
+    end
+    N = N - length(msg)
+    M = floor(Int, N/2) - 3
+    E = N-6-(M*2)
+    s  = @sprintf("%s\n", "| "*repeat("-", M)*" "*repeat(" ", E)*msg*" "*repeat("-", M)*" |")
+    print_to_sdtout && printstyled(s, color = color)
+    if file_out !== nothing
+        print(io, s)
+    end
+end
+
+export default_energy_step_frame_detailed
+
+"""
+    default_energy_step_frame_detailed(n::Int, output_frame::String, msg::String = "Callback", color::Symbol = :none, output_log::Opt{String} = nothing, print_to_sdtout::Bool = true)::Callback
 
 Returns a detailed [`Callback`](@ref ProtoSyn.Drivers.Callback) that prints the
 current step and all energy components of the [`Pose`](@ref) every `n` steps,

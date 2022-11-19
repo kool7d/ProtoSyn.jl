@@ -82,17 +82,27 @@ function add_hydrogens!(pose::Pose, res_lib::LGrammar, selection::Opt{AbstractSe
         atoms = TrueSelection{Atom}()(pose, gather = true)
     end
 
+    if selection !== nothing
+        residues = ProtoSyn.promote(selection, Residue)(pose, gather = true)
+    else
+        residues = TrueSelection{Residue}()(pose, gather = true)
+    end
+
     # Gather all atom names involved in inter-residue bonds (from the LGrammar
     # operators list)
     r1s = [res_lib.operators[op].r1 for op in keys(res_lib.operators)]
     r2s = [res_lib.operators[op].r2 for op in keys(res_lib.operators)]
 
-    i = 1 # For hydrogen naming. It's recommender to re-name atoms after
-    for residue in eachresidue(pose.graph)
+    i = 1 # For hydrogen naming. It's recommended to re-name atoms after
+    for residue in residues
 
         # Create the residue template from residue name (with full hydrogens)
-        code = string(ProtoSyn.three_2_one[residue.name])
-        template = ProtoSyn.getvar(res_lib, code)
+        if residue.name in keys(res_lib.variables)
+            template = ProtoSyn.getvar(res_lib, residue.name)
+        else
+            code = string(ProtoSyn.three_2_one[residue.name])
+            template = ProtoSyn.getvar(res_lib, code)
+        end
 
         for atom in residue.items
             
@@ -104,6 +114,7 @@ function add_hydrogens!(pose::Pose, res_lib::LGrammar, selection::Opt{AbstractSe
             
             # Get the corresponding template atom (by name) 
             temp                = template.graph[1][atom.name]
+            @assert temp !== nothing "Can't find atom named $(atom.name) in template $(template.graph[1].name)"
 
             # Predict the current coordination (number of bonds) for this atom.
             # 1. Check inter-residue operators in the provided LGrammar to see
@@ -135,7 +146,7 @@ function add_hydrogens!(pose::Pose, res_lib::LGrammar, selection::Opt{AbstractSe
             # internal coordinates). However, the internal coordinates in the
             # template are only in accordance to the template dihedral angles.
             # Any different dihedral angles (phi, psi, omega and chis) wil break
-            # the structure and induce super-positions. The final internal
+            # the structure and introduce super-positions. The final internal
             # coordinates to the introduced hydrogens need to reflect the
             # current dihedral angles the parent atom is involved.
             # 1. Measure current dihedral angle on the parent atom. This depends
@@ -184,16 +195,22 @@ end
 
 
 """
-    replace_by_fragment!(pose::Pose, atom::Atom, fragment::Fragment)
+    replace_by_fragment!(pose::Pose, atom::Atom, fragment::Fragment; [remove_downstream_graph::Bool = true], [spread_excess_charge::Bool = true])
 
 Replace the selected [`Atom`](@ref) `atom` instance (and any downstream children
-atom, uses [`travel_graph`](@ref) stating on [`Atom`](@ref) `atom` to define the
-downstream region) with the given [`Fragment`](@ref) `fragment`, in the context
-of the provided [`Pose`](@ref) `pose` (updates the [`State`](@ref) and
-[Graph](@ref), etc). The first [`Atom`](@ref) in the [`Fragment`](@ref)
-`fragment` (also known as root or R [`Atom`](@ref)) is placed in the same
-position as the chosen [`Atom`](@ref) `atom` for replacement, and then removed.
-This serves only to orient the remaining [`Fragment`](@ref) `fragment`. Requests
+atom, if `remove_downstream_graph` is set to `true` (is, by default), uses
+[`travel_graph`](@ref), with the default `ProtoSyn.BFS` search algorithm,
+starting on [`Atom`](@ref) `atom` to define the downstream region) with the
+given [`Fragment`](@ref) `fragment`, in the context of the provided
+[`Pose`](@ref) `pose` (updates the [`State`](@ref) and [Graph](@ref graph-types)). The first
+[`Atom`](@ref) in the [`Fragment`](@ref) `fragment` (also known as root or R
+[`Atom`](@ref)) is placed in the same position as the chosen [`Atom`](@ref)
+`atom` for replacement, and is then removed. This serves only to orient the
+remaining [`Fragment`](@ref) `fragment`. If the `spread_excess_charge` flasg is
+set to `true` (is, by default), the total sum of partial charges in the added
+[`Fragment`](@ref) `fragment` is divided by the number of remaning bonds (if
+`remove_downstream_graph` is set to `true`, some bonds may be removed during the
+replacement process) and added to each bonded [`Atom`](@ref) instance. Requests
 internal to cartesian coordinates.
 
 # Examples
@@ -213,49 +230,86 @@ Pose{Topology}(Topology{/2a3d:3900}, State{Float64}:
 )
 ```
 """
-function replace_by_fragment!(pose::Pose, atom::Atom, fragment::Fragment)
+function replace_by_fragment!(pose::Pose, atom::Atom, fragment::Fragment;
+    remove_downstream_graph::Bool = true, spread_excess_charge::Bool = true)
     
-    # 0. Save current atom information
-    fragment = copy(fragment)
-    parent = atom.parent
-    parent_index = parent.index
-    parent_index_in_res = findfirst(x -> x === parent, parent.container.items)
-    atomstate = copy(pose.state[atom])
+    # In order to not destroy the fragment information, work on a copy
+    fragment            = copy(fragment)
 
-    dihedrals = Vector{eltype(pose.state)}()
-    _fragment = Pose(fragment)
-    for a in ProtoSyn.root(_fragment.graph).children[1].children[1].children
-        push!(dihedrals, ProtoSyn.getdihedral(_fragment.state, a))
-    end
-    
-    # 1. Remove selected atom & any children atoms
-    to_remove = ProtoSyn.travel_graph(atom)
+    # Save the current information regarding the system (parent and atomstate)
+    root                = ProtoSyn.root(pose.graph)
+    parent              = atom.parent
+    parent_container    = parent === root ? atom.children[1].container : parent.container
+    parent_index        = parent === root ? atom.children[1].index - 1 : parent.index # In the state
+    index_in_res        = findfirst(x -> x === atom, parent_container.items)
 
-    for a in reverse(to_remove) # Note the reverse loop
-        ProtoSyn.pop_atom!(pose, a)
+    @info "Environment:\n Parent = $parent\n Parent === root? $(parent === root)\n Parent index = $parent_index\n Index in residue = $index_in_res (out of $(length(parent_container.items)))"
+
+    if spread_excess_charge
+        excess_charge       = sum([fragment.state[a].δ for a in eachatom(fragment.graph)])
+        @info "Excess charge = $excess_charge"
     end
 
-    # 2. Add fragment to residue
+    last_position_in_res  = index_in_res === length(parent_container.items)
+    last_position_in_pose = last_position_in_res && parent_container === collect(eachresidue(pose.graph))[end]
+    
+    # Remove selected atom & any children atoms
+    if remove_downstream_graph
+        to_remove = ProtoSyn.travel_graph(atom)[2:end] # Keep selected atom
+        
+        for a in reverse(to_remove) # Note the reverse loop
+            ProtoSyn.pop_atom!(pose, a)
+        end
+    end
+
+    # Add fragment to residue (start with the first atom in the fragment,
+    # children of the fake fragment root) - change name, symbol and charge only
     frag_origin = ProtoSyn.origin(fragment.graph)
     first_atom  = frag_origin.children[1]
-    insert!(parent.container, parent_index_in_res + 1, first_atom)
-    ProtoSyn.popparent!(first_atom)
-    ProtoSyn.unbond!(fragment, first_atom, frag_origin)
-    ProtoSyn.bond(first_atom, parent)
-    ProtoSyn.setparent!(first_atom, parent)
-    atomstate.b = fragment.state[first_atom].b
-    insert!(pose.state, parent_index + 1, State([atomstate]))
+
+    atom.name   = first_atom.name
+    atom.symbol = first_atom.symbol
+    pose.state[atom].δ = fragment.state[first_atom].δ
 
     for (i, frag_atom) in enumerate(ProtoSyn.travel_graph(first_atom)[2:end])
-        insert!(parent.container, parent_index_in_res + i + 1, frag_atom)
-        insert!(pose.state, parent_index + i + 1, State([fragment.state[frag_atom]]))
+
+        # Insert the fragment atom in the Pose's graph
+        @info "Inserting atom $(frag_atom.name) graph in position $(parent_index_in_res + i + 1) in the parent container."
+        @info "Between $(parent_container[parent_index_in_res + i]) and $(parent_container[parent_index_in_res + i + 1])"
+        insert!(parent_container, index_in_res + i, frag_atom)
+
+        # Insert (or append) a copy of the fragment atom's Atomstate to the
+        # Pose's State
+        if last_position_in_pose
+            append!(pose.state, copy(State([fragment.state[frag_atom]])))
+        else
+            @info "Inserting atomstate of $frag_atom at position $(parent_index + i + 1) of the pose's state."
+            insert!(pose.state, atom.index + i, copy(State([fragment.state[frag_atom]])))
+        end
+
+        # Set the newly copied AtomState parent to be the Pose's state
+        pose.state[atom.index + i].parent = pose.state
+
+        # Adjust parenthood and bonds if changing from being connected to the
+        # fragment root to the pose's selected atom
+        if frag_atom.parent === first_atom
+            ProtoSyn.popparent!(frag_atom)
+            ProtoSyn.setparent!(frag_atom, atom)
+            ProtoSyn.unbond!(fragment, frag_atom, first_atom, keep_downstream_position = false)
+            ProtoSyn.bond(frag_atom, atom)
+        end
     end
 
     reindex(pose.graph, set_ascendents = true)
     reindex(pose.state)
 
-    for (i, a) in enumerate(first_atom.children)
-        ProtoSyn.setdihedral!(pose.state, a, dihedrals[i])
+    # Spread excess charge over the bonded atoms to first_atom
+    if spread_excess_charge
+        charge_per_bond     = excess_charge / length(atom.bonds)
+
+        for bond in atom.bonds
+            pose.state[bond].δ -= charge_per_bond
+        end
     end
 
     ProtoSyn.request_i2c!(pose.state)
@@ -297,7 +351,7 @@ Pose{Atom}(Atom{/H:6299}, State{Float64}:
 """
 function pop_atom!(pose::Pose{Topology}, atom::Atom; keep_downstream_position::Bool = true)::Pose{Atom}
 
-    ProtoSyn.verbose.mode && @info "Removing atom $atom ..."
+    @info "Removing atom $atom ..."
     if atom.container.container.container !== pose.graph
         error("Atom $atom does not belong to the provided topology.")
     end
@@ -313,6 +367,7 @@ function pop_atom!(pose::Pose{Topology}, atom::Atom; keep_downstream_position::B
         # atoms and sets parent of downstream atom to origin
         ProtoSyn.unbond!(pose, atom, other, keep_downstream_position = keep_downstream_position)
     end
+    sync!(pose) # ? Unsure why 100%, but we need to sync here.
 
     # During the last step, this atom might have been severed in an
     # inter-residue connection while being a child, therefore, it's parent was
@@ -321,7 +376,6 @@ function pop_atom!(pose::Pose{Topology}, atom::Atom; keep_downstream_position::B
     _root = root(pose.graph)
     hasparent(atom) && isparent(_root, atom) && begin
         popparent!(atom)
-        # hasparent(atom.container) && popparent!(atom.container)
     end
 
     # Remove from graph
@@ -334,10 +388,13 @@ function pop_atom!(pose::Pose{Topology}, atom::Atom; keep_downstream_position::B
     # Reindex and set ascendents
     reindex(pose.graph) # Since we removed an atom, needs to be reindexed
     reindex(pose.state) # Since we removed an atom, needs to be reindexed
-    ProtoSyn.request_i2c!(pose.state)
 
     # Update container 'itemsbyname'
-    pop!(atom.container.itemsbyname, atom.name)
+    if atom.name in keys(atom.container.itemsbyname)
+        pop!(atom.container.itemsbyname, atom.name)
+    else
+        @warn "While popping atom $(atom.name), attempted to remove entry from the container.itemsbyname, but no entry was found."
+    end
 
     # Set common ID
     popped_atom.id = popped_state.id = genid()

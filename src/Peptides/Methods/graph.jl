@@ -32,8 +32,39 @@ end
 
 
 """
-# TODO
-# SHOULD USE FIND_TAUTOMER?
+    assign_default_atom_names!(pose::Pose, [selection::Opt{AbstractSelection} = nothing], [grammar::LGrammar = Peptides.grammar]; [force_rename::Bool = false])
+
+Assigns the default [`Atom`](@ref) names to the given [`Pose`](@ref) `pose`. If
+an `AbstractSelection` `selection` is provided, only rename the selected
+[`Residue`](@ref) instances (any given `selection` will be promoted to be of
+[`Residue`](@ref) level using [`ProtoSyn.promote`](@ref)). The [`Atom`](@ref)
+default names are retrieved from the given [`LGrammar`](@ref) `grammar`
+(`Peptides.grammar`, by default). Both the given [`Pose`](@ref) and the built
+template from the `grammar`'s [Graph](@ref graph-types) are travelled to generate a 1-to-1
+correspondence between [`Atom`](@ref) instances (the [`Pose`](@ref)
+[`Atom`](@ref) names are then renamed to match the template, uses the
+[`ProtoSyn.travel_graph`](@ref) method with the `ProtoSyn.Peptides.IUPAC` search
+algorithm). This approach may sometimes fail, for example, when tautomers are
+present, in wich case this method attempts to find tautomer candidates in a
+[`Residue`](@ref) by [`Residue`](@ref) case. This method also attempts to verify
+if terminal [`Residue`](@ref) instances are capped, in which case the correct
+naming attribution is automatically taken into consideration.
+
+!!! ukw "Note:"
+    Some methods (such as, for example, the [`assign_default_charges!`](@ref ProtoSyn.Peptides.Calculators.Electrostatics.assign_default_charges!) method) expect default atom names. Consider using [`ProtoSyn.Peptides.diagnose`](@ref) to check whether the current [`Atom`](@ref) names are known.
+
+# See also
+[`rename!`](@ref ProtoSyn.rename!)
+
+# Examples
+```
+julia> ProtoSyn.Peptides.assign_default_atom_names!(pose)
+Pose{Topology}(Topology{/2a3d:42429}, State{Float64}:
+ Size: 1140
+ i2c: false | c2i: false
+ Energy: Dict(:Total => Inf)
+)
+```
 """
 function assign_default_atom_names!(pose::Pose, selection::Opt{AbstractSelection} = nothing, grammar::LGrammar = Peptides.grammar; force_rename::Bool = false)
 
@@ -48,9 +79,7 @@ function assign_default_atom_names!(pose::Pose, selection::Opt{AbstractSelection
         residues = sele(segment, gather = true)
         
         if length(residues) === 0
-            if ProtoSyn.verbose.mode
-                @warn "Skipping $segment : No selected residues in this segment!"
-            end
+            @info "Skipping $segment : No selected residues in this segment!"
             
             continue
         end
@@ -60,8 +89,8 @@ function assign_default_atom_names!(pose::Pose, selection::Opt{AbstractSelection
 
         # Check caps
         # N-terminal
-        N_terminal_pose     = NTerminalSelection()(segment, gather = true)[1]
-        N_terminal_template = NTerminalSelection()(template, gather = true)[1]
+        N_terminal_pose     = UpstreamTerminalSelection{Residue}()(segment, gather = true)[1]
+        N_terminal_template = UpstreamTerminalSelection{Residue}()(template, gather = true)[1]
         N = ProtoSyn.identify_atom_by_bonding_pattern(N_terminal_pose, ["N", "C", "C", "O"])
         if isa(N, Vector{Atom})
             if length(N) === 0
@@ -78,8 +107,8 @@ function assign_default_atom_names!(pose::Pose, selection::Opt{AbstractSelection
         end
 
         # C-terminal
-        C_terminal_pose     = CTerminalSelection()(segment, gather = true)[1]
-        C_terminal_template = CTerminalSelection()(template, gather = true)[1]
+        C_terminal_pose     = DownstreamTerminalSelection{Residue}()(segment, gather = true)[1]
+        C_terminal_template = DownstreamTerminalSelection{Residue}()(template, gather = true)[1]
         C = identify_c_terminal(segment, supress_warn = true) # Uses multiple criteria to identify
         if isa(C, Vector{Atom})
             if length(C) === 0
@@ -106,9 +135,7 @@ function assign_default_atom_names!(pose::Pose, selection::Opt{AbstractSelection
         end
         
         # In case the direct approach wasn't successful
-        if ProtoSyn.verbose.mode
-            @warn "Possible tautomers identified, assigning default names residue by residue ..."
-        end
+        @info "Possible tautomers identified, assigning default names residue by residue ..."
         pose_temp_res = zip(eachresidue(segment), eachresidue(template.graph))
         for (pose_residue, template_residue) in pose_temp_res
             # println("\n$pose_residue - $template_residue")
@@ -157,7 +184,9 @@ function assign_default_atom_names!(pose::Pose, selection::Opt{AbstractSelection
                         end
                     end
                 else
-                    @warn "Available template for $pose_residue ($(template_residue)) doesn't match the graph."
+                    println("    Graph: $([x.name for x in pose_atoms])")
+                    println(" Template: $([x.name for x in temp_atoms])")
+                    @warn "Available template for $pose_residue doesn't match the graph.\n    Graph: $pose_graph\n Template: $temp_graph"
                 end
             end
         end

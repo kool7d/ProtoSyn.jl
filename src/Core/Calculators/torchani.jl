@@ -12,12 +12,16 @@ module TorchANI
     const _model   = PyNULL()
 
     function __init__()
+        printstyled(" | Loading TorchANI\n", color = :cyan)
 
         torch_is_available = false
         try
             copy!(torch, pyimport("torch"))
             torch_is_available = true
         catch LoadError
+            if !("JULIA_PROTOSYN_WARN_NON_AVALIABLE_EFC" in keys(ENV))
+                ENV["JULIA_PROTOSYN_WARN_NON_AVALIABLE_EFC"] = true
+            end
             if ENV["JULIA_PROTOSYN_WARN_NON_AVALIABLE_EFC"] === "true"
                 println()
                 @warn """
@@ -45,6 +49,9 @@ module TorchANI
             copy!(torchani, pyimport("torchani"))
             torchani_is_available = true
         catch LoadError
+            if !("JULIA_PROTOSYN_WARN_NON_AVALIABLE_EFC" in keys(ENV))
+                ENV["JULIA_PROTOSYN_WARN_NON_AVALIABLE_EFC"] = true
+            end
             if ENV["JULIA_PROTOSYN_WARN_NON_AVALIABLE_EFC"] === "true"
                 println()
                 @warn """
@@ -79,11 +86,11 @@ module TorchANI
             copy!(_model, torchani.models.ANI2x(periodic_table_index = true).to(device))
         end
 
-        if torch_is_available && torchani_is_available && ProtoSyn.verbose.mode
-            @info "TorchANI is using:"
-            @info " torch version $(torch.__version__)"
-            @info " cuda-toolkit version $(torch.version.cuda)"
-            @info " torchani version $(torchani.__version__)"
+        if torch_is_available && torchani_is_available
+            # @info "TorchANI is using:"
+            # @info " torch version $(torch.__version__)"
+            # @info " cuda-toolkit version $(torch.version.cuda)"
+            # @info " torchani version $(torchani.__version__)"
         end
     end
 
@@ -141,7 +148,7 @@ module TorchANI
     # --- SINGLE MODEL
     
     """
-        calc_torchani_model([::A], pose::Pose; update_forces::Bool = false, model::Int = 3) where {A}
+        calc_torchani_model([::A], pose::Pose, selection::Opt{AbstractSelection}, update_forces::Bool = false; model::Int = 3) where {A}
         
     Calculate and return the [`Pose`](@ref) `pose` energy according to a single
     TorchANI model neural network. The model can be defined using `model_index`
@@ -281,7 +288,7 @@ module TorchANI
     # * Default Energy Components ----------------------------------------------
 
     """
-        get_default_torchani_model(;α::T = 1.0) where {T <: AbstractFloat}
+        get_default_torchani_model(;[α::T = 1.0]) where {T <: AbstractFloat}
 
     Return the default TorchANI model [`EnergyFunctionComponent`](@ref). `α`
     sets the component weight (on an
@@ -325,7 +332,7 @@ module TorchANI
     end
     
     """
-        get_default_torchani_ensemble(;α::T = 1.0) where {T <: AbstractFloat}
+        get_default_torchani_ensemble(;[α::T = 1.0]) where {T <: AbstractFloat}
 
     Return the default TorchANI ensemble [`EnergyFunctionComponent`](@ref). `α`
     sets the component weight (on an

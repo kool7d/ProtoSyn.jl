@@ -107,12 +107,12 @@ to the given [`Pose`](@ref) `pose`.
 julia> ProtoSyn.Calculators.fixate_mask!(energy_function[4], pose)
 ProtoSyn.Mask
  ├── Type: Atom
- ├── Size: (21, 21)
- ├── Count: 420
- └── Content: [0 1 … 1 1; 1 0 … 1 1; … ; 1 1 … 0 1; 1 1 … 1 0]
+ ├── Size: (343, 343)
+ ├── Count: 111594 / 117649
+ └── Content: [0 0 … 1 1; 0 0 … 1 1; … ; 1 1 … 0 0; 1 1 … 0 0]
 ```
 """
-function fixate_mask!(efc::EnergyFunctionComponent{T}, pose::Pose) where {T <: AbstractFloat}
+function fixate_mask!(efc::EnergyFunctionComponent, pose::Pose)
     if (:mask in keys(efc.settings)) & isa(efc.settings[:mask], Function)
         efc.settings[:mask] = efc.settings[:mask](pose)
     end
@@ -151,6 +151,9 @@ function Base.show(io::IO, efc::EnergyFunctionComponent{T}, level_code::Opt{Leve
                 val = "Dict{$(p[1]), $(p[2])}($N component$e)"
             else
                 val = string(value)
+                if length(val) > 45
+                    val = val[1:40]*" (...)"
+                end
             end
 
             @printf(io, "%s |%-30s | %-46s   |\n", inner_lead, " $key", "$val")

@@ -5,7 +5,7 @@ function (sa::IUPACSA)(atom::Atom, stack::Vector{Atom})
     if atom.name == "CA"
         c_index = findfirst((atom) -> atom.name == "C", bonds)
         if c_index === nothing
-            ProtoSyn.verbose.mode && @warn "Tried to sort $atom children following IUPAC convention, but no \"C\" atom was found."
+            @warn "Tried to sort $atom children following IUPAC convention, but no \"C\" atom was found."
         else
             push!(bonds, bonds[c_index])
             deleteat!(bonds, c_index)
@@ -17,7 +17,7 @@ end
 """
     (ProtoSyn.IUPAC)(atom::Atom, stack::Vector{Atom})
 
-IUPAC-like search algorithm for [`travel_graph!`](@ref). Correctly sorts the
+IUPAC-like search algorithm for [`travel_graph`](@ref). Correctly sorts the
 given [`Atom`](@ref) `atom` children instances and concatenates with the current
 `stack`. This method attempts to identify each [`Residue`](@ref) sidechain (from
 alpha-carbon CA children names) and sorts sidechain before the remaining

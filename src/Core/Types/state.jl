@@ -99,7 +99,9 @@ Base.setproperty!(ns::AtomState{T}, key::Symbol, val) where T = begin
     elseif key == :t
         setfield!(ns, :changed, true)
         setfield!(ns, key, MVector{3, T}(val))
-        update_state_matrix(ns.parent.x, val, :, ns.index, update_items = false)
+        if ns.parent !== nothing
+            update_state_matrix(ns.parent.x, val, :, ns.index, update_items = false)
+        end
     else
         setfield!(ns, :changed, true)
         setfield!(ns, key, val)
@@ -359,6 +361,22 @@ Base.getindex(s::State, seg::Segment) = begin
     s.items[(seg[1][1].index + s.index_offset):(seg[end][end].index + s.index_offset)]
 end
 
+function Base.setindex!(s::State, ns::AtomState{T}, at::Atom) where {T <: AbstractFloat}
+    os         = s[at]
+    os.parent  = s
+    os.b       = ns.b
+    os.θ       = ns.θ
+    os.ϕ       = ns.ϕ
+    os.Δϕ      = ns.Δϕ
+    os.δ       = ns.δ
+    os.changed = ns.changed
+    os.index   = ns.index
+    os.t       = ns.t
+    os.r       = ns.r
+
+    return os
+end
+
 Base.firstindex(s::State) = 1-s.index_offset
 Base.lastindex(s::State) = s.size
 
@@ -418,16 +436,25 @@ end
 Base.copy(as::AtomState{T}) where {T <: AbstractFloat} = begin
     return ProtoSyn.AtomState(
         nothing, as.index, copy(as.t), copy(as.r),
-        as.b, as.θ, as.ϕ, as.Δϕ, as.δ, as.changed)
+        as.b, as.θ, as.ϕ, as.δ, as.Δϕ, as.changed)
+end
+
+Base.push!(s::State{T}, as::AtomState{T}) where T = begin
+    push!(s.items, as)
+    s.x.coords = hcat(s.x.coords, as.t)
+    s.f = hcat(s.f, [T(0.0), T(0.0), T(0.0)])
+    s.size += 1
+    as.parent = s
+    return s
 end
 
 #endregion State
 
 
 function atmax(state::State{T}, comp::Symbol) where T
-    m = T(0)
+    m   = T(0)
     idx = 0
-    x = getproperty(state, comp)
+    x   = getproperty(state, comp)
     for i = 1:state.size
         f = x[1, i]^2 + x[2, i]^2 + x[3, i]^2
         if f > m
@@ -435,6 +462,7 @@ function atmax(state::State{T}, comp::Symbol) where T
             idx = i
         end
     end
+    
     return sqrt(m), idx
 end
 

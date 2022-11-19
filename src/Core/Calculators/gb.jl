@@ -13,12 +13,18 @@ module GB
         S::Opt{Ghost.Tape}
     end
 
-    const models_onnx = GBModels(
-        ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_C.onnx"), rand(Float64, 400, 1)),
-        ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_N.onnx"), rand(Float64, 400, 1)),
-        ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_H.onnx"), rand(Float64, 400, 1)),
-        ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_O.onnx"), rand(Float64, 400, 1)),
-        ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_S.onnx"), rand(Float64, 400, 1)))
+    models_onnx = nothing
+
+    function __init__()
+        printstyled(" | Loading ONNX models\n", color = :cyan)
+        
+        @eval(GB, models_onnx = GBModels(
+            ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_C.onnx"), rand(Float64, 400, 1)),
+            ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_N.onnx"), rand(Float64, 400, 1)),
+            ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_H.onnx"), rand(Float64, 400, 1)),
+            ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_O.onnx"), rand(Float64, 400, 1)),
+            ONNX.load(joinpath(ProtoSyn.resource_dir, "Calculators/iGBR-NN/model_S.onnx"), rand(Float64, 400, 1))))
+    end
 
     Base.show(io::IO, models::GBModels) = begin
         s = ""
@@ -32,8 +38,8 @@ module GB
 
     """
         predict_igbr_nn_born_radii(pose::Pose, selection::Opt{AbstractSelection} = nothing; dm::Opt{Matrix{T}} = nothing, models::GBModels = models_onnx) where {T <: AbstractFloat}
-
-    Returns the Born Radii for each [`Atom`](@ref) instance in the given
+    
+        Returns the Born Radii for each [`Atom`](@ref) instance in the given
     [`Pose`](@ref) `pose` (selected by the `AbstractSelection` `selection` -
     [`TrueSelection`](@ref), by default), according to the IGBR neural network
     model (See Fogolari et al. work - https://pubmed.ncbi.nlm.nih.gov/31693089/).
@@ -120,7 +126,7 @@ module GB
     predictors can be defined, using the following signature:
 
     ```my_born_radii_predictor(pose::Pose, selection::Opt{AbstractSelection} = nothing; dm::Opt{Matrix{T}} = nothing, models::GBModels = models_onnx)```
-
+    
     Note the presence of pre-calculated full-distance matrix `dm` in the
     `Function` arguments. Even if no `GBModels` are used in the Born Radii
     prediction, `calc_gb` still provides them and as such the custom `Function`
@@ -129,10 +135,8 @@ module GB
     acceleration type used to calculate this energetic contribution (See
     [ProtoSyn acceleration types](@ref)). Uses `ProtoSyn.acceleration.active` by
     default.
-
     # See also
     [`get_default_gb`](@ref)
-
     # Examples
     ```jldoctest
     julia> ProtoSyn.Calculators.GB.calc_gb(pose, nothing)
@@ -173,17 +177,17 @@ module GB
                 αj    = born_radii[j]
 
                 d_sqr = dm[i, j] * dm[i, j]
-                if ProtoSyn.verbose.mode
-                    println("$i <-> $j")
-                    println(" Distance: $(dm[i, j])\n qi: $qi | qj: $qj")
-                    println(" αi: $αi | αj: $αj")
-                end
+                @debug "$i <-> $j"
+                @debug " Distance: $(dm[i, j])\n qi: $qi | qj: $qj"
+                @debug " αi: $αi | αj: $αj"
+                αi = αi < 0 ? 0.0 : αi
+                αj = αj < 0 ? 0.0 : αj
                 f = sqrt(d_sqr + (αi * αj * exp((-d_sqr) / (4 * αi * αj))))
                 int += (qi * qj) / f
             end
         end
 
-        ProtoSyn.verbose.mode && println("Env: $env\nInt: $int")
+        @debug "Env: $env\nInt: $int"
         e = T(env * int)
 
         return e, nothing
@@ -195,24 +199,21 @@ module GB
 
 
     """
-        get_default_gb(;α::T = 1.0) where {T <: AbstractFloat}
-
+        get_default_gb(;[α::T = 1.0]) where {T <: AbstractFloat}
     Return the default Generalized Born [`EnergyFunctionComponent`](@ref). `α`
     sets the component weight (on an
     [`EnergyFunction`](@ref ProtoSyn.Calculators.EnergyFunction) instance). This
-    component employs the [`calc_gb`](@ref) method, therefore defining a
-    [`Pose`](@ref) energy based on the Generalized Born function. By default,
-    this [`EnergyFunctionComponent`](@ref) uses the
+    component employs the [`calc_gb`](@ref) method,
+    therefore defining a [`Pose`](@ref) energy based on the Generalized Born
+    function. By default, this [`EnergyFunctionComponent`](@ref) uses the
     [`predict_igbr_nn_born_radii`](@ref ProtoSyn.Calculators.GB.predict_igbr_nn_born_radii)
     function to predict Born Radii every call. Define
     `efc.settings[:born_radii]` as a `Vector{Float64}` to use static born radii.
-
     # Settings
     * `born_radii::Union{Function, Vector{T}}` - Defines either the born radii predictor function or static list of born radii (where T <: AbstractFloat);
     * `ϵ_protein::T` - Define the protein dieletric constant (where T <: AbstractFloat);
     * `ϵ_solvent::T` - Define the solvent dieletric constant (where T <: AbstractFloat);
     * `models::GBModels` - Define the `GBModels` to use if `:born_radii` is a predictor function.
-
     # Examples
     ```jldoctest
     julia> ProtoSyn.Calculators.GB.get_default_gb()

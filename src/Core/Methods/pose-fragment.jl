@@ -2,21 +2,21 @@ export fragment
 """
     fragment(pose::Pose{Topology})
     
-Return a [Fragment](@ref) from a given [Pose](@ref) `pose`. The pose must have a
+Return a [`Fragment`](@ref) from a given [Pose](@ref pose-types) `pose`. The pose must have a
 single [`Segment`](@ref).
 
     fragment(pose::Pose{Topology}, selection::ProtoSyn.AbstractSelection)
 
-Return a [Fragment](@ref) from a list of residues retrieved from the given
-`selection` when applied to the provided [Pose](@ref) `pose`. If not yet of
+Return a [`Fragment`](@ref) from a list of residues retrieved from the given
+`selection` when applied to the provided [Pose](@ref pose-types) `pose`. If not yet of
 selection type [`Residue`](@ref), the `selection` will be promoted to
 [`Residue`](@ref) selection type (with the default `any` aggregating function).
 The resulting list of residues must be contiguous (a connected graph of
 [`Residue`](@ref) instances parenthoods). These will constitute the unique
-[`Segment`](@ref) of the resulting [Fragment](@ref).
+[`Segment`](@ref) of the resulting [`Fragment`](@ref).
 
 !!! ukw "Note:"
-    A [Fragment](@ref) is a `Pose{Segment}`, without a root/origin. These are
+    A [`Fragment`](@ref) is a `Pose{Segment}`, without a root/origin. These are
     usually used as temporary carriers of information, without the ability to be
     directly incorporated in simulations.
 
@@ -73,6 +73,7 @@ function fragment(pose::Pose{Topology}, selection::ProtoSyn.AbstractSelection)
     segment        = Segment(residues[1].container.name, 1)
     segment.items  = residues
     segment.size   = length(segment.items)
+    segment.code   = segment.name[1]
 
     # Pop parent of any Atom instance connected outside the new fragment (and
     # corresponding Residue container)
@@ -129,48 +130,30 @@ function fragment(pose::Pose{Topology}, selection::ProtoSyn.AbstractSelection)
     return Pose(segment, state)
 end
 
+# function fragment(coords::Vector{Vector{T}}) where {T <: AbstractFloat}
+#     N = length(coords)
+#     state = State(N)
+#     segment = Segment("UNK", -1)
+#     for i in 1:N
+#         res = Residue!(segment, "UNK", i)
+#         state[i].t = coords[i]
+#         Atom!(res, "X$i", i, i, "X")
+#     end
 
-"""
-    fragment(coords::Vector{Vector{T}}) where {T <: AbstractFloat}
-
-Return a [Fragment](@ref) from a list of `coords`. Each coordinate creates a new
-[Residue](@ref) instance with a single [Atom](@ref) instance. Doesn't set
-parenthoods.
-
-# Examples
-```
-julia> frag = fragment(coords)
-Fragment(Segment{/UNK:-1}, State{Float64}:
- Size: 343
- i2c: false | c2i: false
- Energy: Dict(:Total => Inf)
-)
-```
-"""
-function fragment(coords::Vector{Vector{T}}) where {T <: AbstractFloat}
-    N = length(coords)
-    state = State(N)
-    segment = Segment("UNK", -1)
-    for i in 1:N
-        res = Residue!(segment, "UNK", i)
-        state[i].t = coords[i]
-        Atom!(res, "X$i", i, i, "X")
-    end
-
-    return Pose(segment, state)
-end
+#     return Pose(segment, state)
+# end
 
 
 """
     fragment!(pose::Pose{Topology}, selection::ProtoSyn.AbstractSelection; [keep_downstream_position::Bool = true])
 
-Return a [Fragment](@ref) from a list of residues retrieved from the given
-`AbstractSelection` `selection` when applied to the provided [Pose](@ref)
+Return a [`Fragment`](@ref) from a list of residues retrieved from the given
+`AbstractSelection` `selection` when applied to the provided [Pose](@ref pose-types)
 `pose`. If not yet of selection type [`Residue`](@ref), the `selection` will be
 promoted to [`Residue`](@ref) selection type (with the default `any` aggregating
 function). The resulting list of residues must be contiguous (a connected graph
 of [`Residue`](@ref) instances parenthoods). These will constitute the unique
-[`Segment`](@ref) of the resulting [Fragment](@ref). **In opposition to the
+[`Segment`](@ref) of the resulting [`Fragment`](@ref). **In opposition to the
 [`fragment`](@ref) method, this function will remove the fragmented
 [`Residue`](@ref) instances from the original [`Pose`](@ref) (using the
 [`pop_residue!`](@ref) method).** If `keep_downstream_position` is set to `true`
@@ -178,7 +161,7 @@ of [`Residue`](@ref) instances parenthoods). These will constitute the unique
 calling [`request_c2i!`](@ref) and [`sync!`](@ref) methods).
 
 !!! ukw "Note:"
-    A [Fragment](@ref) is a `Pose{Segment}`, without a root/origin. These are
+    A [`Fragment`](@ref) is a `Pose{Segment}`, without a root/origin. These are
     usually used as temporary carriers of information, without the ability to be
     directly incorporated in simulations.
 
@@ -233,8 +216,8 @@ end
 """
     append_fragment_as_new_segment!(pose::Pose{Topology}, frag::Fragment)
 
-Append a [Fragment](@ref) `frag` as a new [`Segment`](@ref) to the given
-[Pose](@ref) `pose`. This function overwrites `pose`.
+Append a [`Fragment`](@ref) `frag` as a new [`Segment`](@ref) to the given
+[`Pose`](@ref) `pose`. This function overwrites `pose`.
 
 # See also
 [`isfragment`](@ref) [`fragment`](@ref)
@@ -374,7 +357,7 @@ function insert_fragment!(pose::Pose{Topology}, residue::Residue, grammar::LGram
         for atom in residue.items
             for bond in atom.bonds
                 if bond in residue.parent.items
-                    ProtoSyn.verbose.mode && @info "Unbonding upstream connection ... $atom - $bond"
+                    @info "Unbonding upstream connection ... $atom - $bond"
                     ProtoSyn.unbond!(pose, atom, bond,
                         keep_downstream_position = false)
                 end
@@ -385,7 +368,7 @@ function insert_fragment!(pose::Pose{Topology}, residue::Residue, grammar::LGram
     # Insert the fragment residues in the pose.graph and set
     # frag_residue.container (of each residue in the fragment) to be the segment
     # of the "parent" residue (automatically on `insert!`)
-    ProtoSyn.verbose.mode && @info "Shifting $residue downstream by $frag_size residues ..."
+    @info "Shifting $residue downstream by $frag_size residues ..."
     insert!(residue.container, residue.index, frag.graph.items)
     insert!(pose.state, residue.items[1].index, frag.state)
 
@@ -401,30 +384,30 @@ function insert_fragment!(pose::Pose{Topology}, residue::Residue, grammar::LGram
     if connect_to_root
         # Case needs to be connected to root
         _root = ProtoSyn.root(pose.graph)
-        ProtoSyn.verbose.mode && @info "Joining upstream $(_root.container) - $(pose.graph[1][r_index]) ..."
+        @info "Joining upstream $(_root.container) - $(pose.graph[1][r_index]) ..."
         for atom in pose.graph[1][r_index].items
             atom.parent === nothing && ProtoSyn.setparent!(atom, _root)
         end
         ProtoSyn.setparent!(pose.graph[1][r_index], _root.container)
     else
         anchor = residue.container[anchor_id]
-        ProtoSyn.verbose.mode && @info "Joining upstream $anchor - $(pose.graph[1][r_index]) ..."
+        @info "Joining upstream $anchor - $(pose.graph[1][r_index]) ..."
         grammar.operators[op](anchor, pose, residue_index = r_index)
     end
 
-    ProtoSyn.verbose.mode && @info "Connecting downstream ..."
+    @info "Connecting downstream ..."
     anchor = residue.container[r_index + frag_size - 1]
     
     # Remove all inter-residue parenthood relationships to upstream residue
     for atom in residue.items
         if !(atom.parent in residue.items)
-            ProtoSyn.verbose.mode && @info "Removing downstream parenthoods ... $atom & $residue"
+            @info "Removing downstream parenthoods ... $atom & $residue"
             ProtoSyn.popparent!(atom)
             ProtoSyn.popparent!(residue)
         end
     end
 
-    ProtoSyn.verbose.mode && @info "Joining downstream $anchor - $(pose.graph[1][residue.index])"
+    @info "Joining downstream $anchor - $(pose.graph[1][residue.index])"
     grammar.operators[op](anchor, pose, residue_index = residue.index)
 
     # Set correct ascedents

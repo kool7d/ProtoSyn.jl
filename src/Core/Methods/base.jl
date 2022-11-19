@@ -262,9 +262,10 @@ end
 
 
 Base.copy(s0::Segment) = begin
-    s1 = Segment(s0.name, s0.id)
+    s1      = Segment(s0.name, s0.id)
+    s1.code = s0.code
     old2new = IdDict{AbstractContainer, AbstractContainer}()
-    root = ProtoSyn.root(s0)
+    root    = ProtoSyn.root(s0)
 
     # copy residues and atoms
     for r0 in eachresidue(s0)
@@ -329,6 +330,21 @@ end
 Base.copy(s::State{T}) where T = begin
     ns = State(T, s.size)
     # Updating item.t also updates the parent.x matrix
+    
+    # Also copies the current root coordinates, if they are present
+    if any((as) -> as.index < 0, s.items)
+        for (index, root_atomstate) in enumerate(s.items[1:3])
+            ns[index - 3].t = copy(root_atomstate.t)
+            ns[index - 3].r = copy(root_atomstate.r)
+            ns[index - 3].b = root_atomstate.b
+            ns[index - 3].θ = root_atomstate.θ
+            ns[index - 3].ϕ = root_atomstate.ϕ
+            ns[index - 3].Δϕ = root_atomstate.Δϕ
+            ns[index - 3].changed = root_atomstate.changed
+            ns[index - 3].δ = root_atomstate.δ
+        end
+    end
+
     for (index, atomstate) in enumerate(s)
         ns[index].t = copy(atomstate.t)
         ns[index].r = copy(atomstate.r)
@@ -351,7 +367,7 @@ end
 """
     copy(pose::Pose)
 
-Return a copied [Pose](@ref) of the provided `pose`. The resulting [Pose](@ref)
+Return a copied [Pose](@ref pose-types) of the provided `pose`. The resulting [Pose](@ref pose-types)
 will have different `:id` fields for the [Graph](@ref state-types) [`Topology`](@ref) and
 [State](@ref state-types).
 
@@ -452,7 +468,7 @@ Detach and return the given [`Segment`](@ref) from it's container
 *This function is a Base module overload.*
 
 !!! ukw "Note:"
-    This function does not alter the [State](@ref state-types) of the [Pose](@ref)
+    This function does not alter the [State](@ref state-types) of the [Pose](@ref pose-types)
     containing the provided [`Segment`](@ref). 
 
 # Examples

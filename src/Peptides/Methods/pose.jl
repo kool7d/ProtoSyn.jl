@@ -267,7 +267,7 @@ function mutate!(pose::Pose{Topology}, residue::Residue, grammar::LGrammar, deri
     pose_sidechain = (!an"^CA$|^N$|^C$|^H$|^O$"r)(residue, gather = true)
     Δϕ             = pose.state[residue["CA"]].Δϕ
     index          = 1
-    _ϕ = ProtoSyn.getdihedral(pose.state, Peptides.Dihedral.phi(residue))
+    _ϕ = ProtoSyn.getdihedral(pose.state, Peptides.phi(residue))
     ϕ  = ProtoSyn.unit_circle(_ϕ)
     for child in residue["CA"].children
         if child in pose_sidechain
@@ -317,16 +317,16 @@ function force_mutate!(pose::Pose{Topology}, residue::Residue, grammar::LGrammar
     # 1) Insert new residue in position R, shifting all downstream residues + 1
     # The inserted residue backbone dihedrals should match the secondary
     # structure pre-existent in the pose
-    phi   = ProtoSyn.getdihedral(pose.state, Peptides.Dihedral.phi(residue))
+    phi   = ProtoSyn.getdihedral(pose.state, Peptides.phi(residue))
     
-    psi_atom = Peptides.Dihedral.psi(residue)
+    psi_atom = Peptides.psi(residue)
     if psi_atom !== nothing
         psi = ProtoSyn.getdihedral(pose.state, psi_atom)
     else
         psi = 0.0
     end
     
-    omega_atom = Peptides.Dihedral.omega(residue)
+    omega_atom = Peptides.omega(residue)
     if omega_atom !== nothing
         omega = ProtoSyn.getdihedral(pose.state, omega_atom)
     else
@@ -352,7 +352,7 @@ function force_mutate!(pose::Pose{Topology}, residue::Residue, grammar::LGrammar
     # deleted the R + 1 old residue). Current parents (after pop_residue! are
     # the root).
     downstream_r_pos = old_r_pos
-    if downstream_r_pos < length(ProtoSyn.sequence(pose))
+    if downstream_r_pos <= length(ProtoSyn.sequence(pose))
         ProtoSyn.popparent!(new_residue.container.items[downstream_r_pos])
         ProtoSyn.popparent!(new_residue.container.items[downstream_r_pos]["N"])
         
@@ -379,9 +379,9 @@ Removes the sidechain atoms of the given [`Pose`](@ref) `pose`. If an
 to the [`Residue`](@ref) instances of that selection are considered for possible
 removal. Essentially, the selected [`Residue`](@ref) instances are mutated to
 Glycine, based on the provided residue library `res_lib`, without changing the
-peptide [`sequence`](@ref). Therefore, the original [`sequence`](@ref) can be
+peptide [`sequence`](@ref ProtoSyn.sequence). Therefore, the original [`sequence`](@ref ProtoSyn.sequence) can be
 recovered using the [`add_sidechains!`](@ref) method and energy components such
-as [`calc_solvation_energy`](@ref ProtoSyn.Peptides.Calculators.Caterpillar.calc_solvation_energy)
+as [`neighbour_vector`](@ref ProtoSyn.Peptides.Calculators.Caterpillar.neighbour_vector)
 can perform correctly.
 
 !!! ukw "Note:"
@@ -487,7 +487,7 @@ based on the templates of the provided `grammar`. If an `AbstractSelection`
 `selection` is given, only the residues of that selection (promoted to `Residue`
 instances, using the default aggregator function) are considered for sidechain
 addition. The addition is performed using the [`mutate!`](@ref) function, and
-follows the current [`Pose`](@ref) [`sequence`](@ref).
+follows the current [`Pose`](@ref) [`sequence`](@ref ProtoSyn.sequence).
 
 # Examples
 ```jldoctest
@@ -558,6 +558,24 @@ function is_C_terminal(res::Residue)
 end
 
 
+"""
+    identify_c_terminal(seg::Segment; supress_warn::Bool = false)
+
+Attempts to identify the C terminal of a given [`Segment`](@ref) `seg`, using
+the following criteria:
+ + Bonding patter: the C terminal follows the bonding pattern C-C-N-C, there the C-terminal is the first C atom of the pattern.
+ + Bond number: the C terminal must not exceed 3 bonds.
+ + By atom name: the C terminal must be bonded to an atom named CA
+As such, this method does not use parenthood relationships to identify the C
+terminal. If the `supress_warn` is set to `true` (`false`, by default), any
+generated warnings are ignored.
+
+# Examples
+```
+julia> ProtoSyn.Peptides.identify_c_terminal(pose.graph[1])
+Atom{/2a3d:40139/A:1/ASN:73/C:1138}
+```
+"""
 function identify_c_terminal(seg::Segment; supress_warn::Bool = false)
 
     # Criterium 1. Identify atom by the bonding pattern
@@ -619,7 +637,7 @@ function uncap!(pose::Pose, selection::Opt{AbstractSelection} = nothing)
     # * (N-terminal residue has an atom named "N" and C-terminal has an atom
     # * named "C", both with a bond to a "CA" atom).
 
-    _selection = ProtoSyn.TerminalSelection()
+    _selection = DownstreamTerminalSelection{Residue}() | UpstreamTerminalSelection{Residue}()
     if selection !== nothing
         _selection = _selection & selection
     end
@@ -633,6 +651,7 @@ function uncap!(pose::Pose, selection::Opt{AbstractSelection} = nothing)
     for residue in residues
         if is_C_terminal(residue)
             terminal = residue["C"]
+            @assert terminal !== nothing "Can't find atom \"C\" in terminal residue $residue"
 
             for bond in reverse(terminal.bonds) # Note the reverse loop
                 if !(bond.name in ["CA"])
@@ -698,7 +717,7 @@ function cap!(pose::Pose, selection::Opt{AbstractSelection} = nothing)
     sync!(pose)
 
     # * Search for terminals to cap
-    _selection = ProtoSyn.TerminalSelection()
+    _selection = DownstreamTerminalSelection{Residue}() | UpstreamTerminalSelection{Residue}()
     if selection !== nothing
         _selection = _selection & selection
     end

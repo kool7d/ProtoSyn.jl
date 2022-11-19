@@ -110,7 +110,7 @@ LGrammar{Float64, String, Vector{String}}:
  Variables: None.
  Operators: None.
 
-julia> grammar = ProtoSyn.Peptides.grammar()
+julia> grammar = ProtoSyn.Peptides.grammar
 ```
 """
 mutable struct LGrammar{T <: AbstractFloat, K, V}
@@ -126,6 +126,8 @@ LGrammar{T, K, V}() where {T <: AbstractFloat, K, V} = LGrammar{T, K, V}(
     Dict{K, Operation}(),
     nothing
 )
+
+LGrammar() = LGrammar{Float64, String, Vector{String}}()
 
 Base.show(io::IO, lgrammar::LGrammar{T, K, V}) where {T <: AbstractFloat, K, V} = begin
     print(io, "LGrammar{$T, $K, $V}:\n Rules:")
@@ -404,8 +406,7 @@ Create an `LGrammar` instance from the contencts of a `template` Dict (normally
 read from a grammar file). Any numerical entry is parsed to the provided type
 `T` (or `Units.defaultFloat` if no type is provided). The `operators` entry is
 parsed by the [`opfactory`](@ref) method. Return the parsed [`LGrammar`](@ref)
-instance. If `verbose` is set to `true` (is, by default), print the loading
-status.
+instance.
 
 # See also
 [`LGrammar`](@ref) [`load_grammar_from_file`](@ref) [`opfactory`](@ref)
@@ -423,7 +424,7 @@ function lgfactory(::Type{T}, template::Dict) where T
             poses = Vector{Fragment}()
             for (i, _name) in enumerate(name)
                 filename = joinpath(ProtoSyn.resource_dir, _name)
-                ProtoSyn.verbose.mode && @info "Loading variable '$key' (tautomer $i) from $filename"
+                @info "Loading variable '$key' (tautomer $i) from $filename"
                 pose = ProtoSyn.load(T, filename)
                 pose.graph.name = pose.graph[1].name # ! Hack for long filenames
                 push!(poses, fragment(pose))
@@ -431,7 +432,7 @@ function lgfactory(::Type{T}, template::Dict) where T
             grammar[key] = Tautomer(poses)
         else
             filename = joinpath(ProtoSyn.resource_dir, name)
-            ProtoSyn.verbose.mode && @info "Loading variable '$key' from $filename"
+            @info "Loading variable '$key' from $filename"
             pose = ProtoSyn.load(T, filename)
             pose.graph.name = pose.graph[1].name # ! Hack for long filenames
             grammar[key] = fragment(pose)
@@ -467,7 +468,7 @@ function lgfactory(::Type{T}, template::Dict) where T
                 end
             end
 
-            ProtoSyn.verbose.mode && @info "Loading operator $opname"
+            @info "Loading operator $opname"
             grammar[opname] = opfactory(opargs)
         end
     end
@@ -478,11 +479,11 @@ function lgfactory(::Type{T}, template::Dict) where T
 
     if haskey(template, "rules")
         for (key, rules) in template["rules"]
-            ProtoSyn.verbose.mode && @info "Loading productions for rule $key"
+            @info "Loading productions for rule $key"
             for rule in rules
                 sr = StochasticRule(rule["p"], key => rule["production"])
                 push!(grammar, sr)
-                ProtoSyn.verbose.mode && @info "  $sr"
+                @info "  $sr"
             end
         end
     end
@@ -500,7 +501,8 @@ Create an [`LGrammar`](@ref) instance from the contents of a grammar file (in
 .YML format) under the `key` entry. The file contents are parsed by the
 [`lgfactory`](@ref) method. Any numerical entry is parsed to the provided type
 `T` (or `Units.defaultFloat` if no type is provided). Return the parsed
-[`LGrammar`](@ref) instance.
+[`LGrammar`](@ref) instance. automatically calls
+[`load_grammar_extras_from_file!`](@ref).
 
 # See also
 [`LGrammar`](@ref) [`lgfactory`](@ref)
@@ -515,7 +517,7 @@ julia> lgrammar = load_grammar_from_file(filename, "peptide")
 function load_grammar_from_file(::Type{T}, filename::AbstractString, key::String) where {T <: AbstractFloat}
     ProtoSyn.load_grammar_extras_from_file!(T, filename, key)
     open(filename) do io
-        ProtoSyn.verbose.mode && @info "loading grammar from file $filename"
+        @info "loading grammar from file $filename"
         yml = YAML.load(io)
         return lgfactory(T, yml[key])
     end
@@ -525,6 +527,29 @@ load_grammar_from_file(filename::AbstractString, key::String) = begin
     return load_grammar_from_file(Units.defaultFloat, filename, key)
 end
 
+
+"""
+    load_grammar_extras_from_file!([::Type{T}], filename::AbstractString, key::String) where {T <: AbstractFloat}
+
+Loads the `key` entry in the given [`LGrammar`](@ref) .YML file (`filename`)
+extras into the correct global variables in ProtoSyn. Any numerical entry is
+parsed to the provided type `T` (or `Units.defaultFloat` if no type is
+provided).
+
+The extra info loaded by this method is:
++ Any `alt` entry is added to `ProtoSyn.alt_residue_names`
+
+!!! ukw "Note:"
+    Other modules (such as [Peptides](@ref)) may retrieve extra information from the [`LGrammar`](@ref) file. As such, these modules often include an expanded method for [`load_grammar_extras_from_file!`](@ref).
+
+!!! ukw "Note:"
+    This method is automatically called from [`load_grammar_from_file`](@ref). This is the recommended way to load an [`LGrammar`](@ref) (this method shouldn't be called as a standalone for most applications).
+
+# Examples
+```
+julia> ProtoSyn.load_grammar_extras_from_file!(ProtoSyn.resource_dir*"/Peptides/grammars.yml", "default")
+```
+"""
 function load_grammar_extras_from_file!(::Type{T}, filename::AbstractString, key::String) where {T <: AbstractFloat}
     
     function load_alt_names!(var_yml::Dict{Any, Any})
