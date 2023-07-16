@@ -29,8 +29,8 @@ module Calculators
     if "USE_IGBR_NN" in keys(ENV) && ENV["USE_IGBR_NN"] === "false"
         @warn "Environment variable USE_IGBR_NN set to `false`. Not loading iGBR-NN ONNX models."
     else
-        @info " | Loading GB"
-        include("gb.jl")
+        # @info " | Loading GB"
+        # include("gb.jl")
     end
 
     @info " | Loading Electrostatics"
